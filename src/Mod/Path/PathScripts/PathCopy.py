@@ -24,6 +24,9 @@
 
 import FreeCAD
 import FreeCADGui
+import Path
+import math
+from PathScripts.PathGeom import PathGeom
 from PySide import QtCore, QtGui
 
 """Path Copy object and FreeCAD command"""
@@ -38,11 +41,80 @@ except AttributeError:
     def translate(context, text, disambig=None):
         return QtGui.QApplication.translate(context, text, disambig)
 
+class GCodeTransform:
+    def __init__(self, rotation, pos):
+        self.rotation = rotation
+        self.xoffset = pos[0]
+        self.yoffset = pos[1]
+        self.zoffset = pos[2]
+
+    def transform(self, path):
+        CmdMoveRapid    = ['G0', 'G00']
+        CmdMoveStraight = ['G1', 'G01']
+        CmdMoveCW       = ['G2', 'G02']
+        CmdMoveCCW      = ['G3', 'G03']
+        CmdDrill        = ['G81', 'G82', 'G83']
+        CmdMoveArc      = CmdMoveCW + CmdMoveCCW
+        CmdMove         = CmdMoveStraight + CmdMoveArc
+
+        commands = []
+        ang = self.rotation/180*math.pi
+        currX = 0
+        currY = 0
+
+        for cmd in path.Commands:
+            if (cmd.Name in CmdMoveRapid) or (cmd.Name in CmdMove) or (cmd.Name in CmdDrill):
+                params = cmd.Parameters
+                x = params.get("X")
+                if x is None:
+                    x = currX
+                currX = x
+                y = params.get("Y")
+                if y is None:
+                    y = currY
+                currY = y
+
+                #rotation around origin:
+                nx = x*math.cos(ang) - y*math.sin(ang)
+                ny = y*math.cos(ang) + x*math.sin(ang)
+
+                params.update({'X':nx+self.xoffset, 'Y': ny+self.yoffset})
+
+                z = params.get("Z")
+                if z is not None:
+                    z += self.zoffset
+                    params.update({"Z": z})
+
+                #Arcs need to have the I and J params rotated as well
+                if cmd.Name in CmdMoveArc:
+                    i = params.get("I")
+                    if i is None:
+                        i = 0
+                    j = params.get("J")
+                    if j is None:
+                        j = 0
+
+                    ni = i*math.cos(ang) - j*math.sin(ang)
+                    nj = j*math.cos(ang) + i*math.sin(ang)
+                    params.update({'I':ni, 'J': nj})
+
+
+
+                cmd.Parameters=params
+            commands.append(cmd)
+        newPath = Path.Path(commands)
+
+        return newPath
+
 
 class ObjectPathCopy:
 
     def __init__(self,obj):
-        obj.addProperty("App::PropertyLink","Base","Path",QtCore.QT_TRANSLATE_NOOP("App::Property","The path to be copied"))
+        obj.addProperty("App::PropertyLink","Base","Path",QtCore.QT_TRANSLATE_NOOP("App::Property","The path to be copyed"))
+        obj.addProperty("App::PropertyVectorDistance", "Position",
+                        "Path", "Position of the Copy")
+        obj.addProperty("App::PropertyAngle", "Rotation",
+                        "Path", "Rotation angle of the copy")
         obj.Proxy = self
 
     def __getstate__(self):
@@ -54,7 +126,9 @@ class ObjectPathCopy:
     def execute(self, obj):
         if obj.Base:
             if obj.Base.Path:
-                obj.Path = obj.Base.Path.copy()
+                basepath = obj.Base.Path
+                trans = GCodeTransform(obj.Rotation, obj.Position)
+                obj.Path = trans.transform(basepath)
 
 
 class ViewProviderPathCopy:
