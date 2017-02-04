@@ -110,7 +110,7 @@ class GCodeTransform:
 class ObjectPathCopy:
 
     def __init__(self,obj):
-        obj.addProperty("App::PropertyLink","Base","Path",QtCore.QT_TRANSLATE_NOOP("App::Property","The path to be copyed"))
+        obj.addProperty("App::PropertyLink","Base","Path",QtCore.QT_TRANSLATE_NOOP("App::Property","The path to be copied"))
         obj.addProperty("App::PropertyVectorDistance", "Position",
                         "Path", "Position of the Copy")
         obj.addProperty("App::PropertyAngle", "Rotation",
