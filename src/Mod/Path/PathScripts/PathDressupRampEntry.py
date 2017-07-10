@@ -53,24 +53,15 @@ class ObjectDressup:
         obj.Method = ['RampMethod1', 'RampMethod2', 'RampMethod3', 'Helix']
         obj.Proxy = self
 
+        obj.setEditorMode('ToolController', 2)
+        obj.Angle = 60
+        obj.Method = 2
+
     def __getstate__(self):
         return None
 
     def __setstate__(self, state):
         return None
-
-    def setup(self, obj):
-        obj.Angle = 60
-        obj.Method = 2
-        toolLoad = obj.ToolController
-        if toolLoad is None or toolLoad.ToolNumber == 0:
-            PathLog.error(translate("No Tool Controller is selected. We need a tool to build a Path\n"))
-            return
-        else:
-            tool = toolLoad.Proxy.getTool(toolLoad)
-            if not tool:
-                PathLog.error(translate("No Tool found. We need a tool to build a Path.\n"))
-                return
 
     def execute(self, obj):
 
@@ -80,6 +71,12 @@ class ObjectDressup:
             return
         if not obj.Base.Path:
             return
+        if not obj.Base.ToolController:
+            PathLog.error(translate("Base Path object has no Tool Contoller. We need a tool to build a Path\n"))
+            return
+
+        obj.ToolController = obj.Base.ToolController
+
         if obj.Angle >= 90:
             obj.Angle = 89.9
         elif obj.Angle <= 0:
@@ -171,7 +168,7 @@ class ObjectDressup:
 
     def generateHelix(self):
         edges = self.wire.Edges
-        minZ = self.findMinZ(edges)
+        minZ = self.findMinZ(edges, self.rapids)
         outedges = []
         i = 0
         while i < len(edges):
@@ -274,9 +271,17 @@ class ObjectDressup:
                 PathLog.error("Edge should not be helix")
         return outedges
 
-    def findMinZ(self, edges):
+    def findMinZ(self, edges, rapids):
         minZ = 99999999999
+
         for edge in edges:
+            isRapid = False
+            for redge in rapids:
+                if PathGeom.edgesMatch(edge, redge):
+                    isRapid = True
+                    break
+            if isRapid:
+                continue
             for v in edge.Vertexes:
                 if v.Point.z < minZ:
                     minZ = v.Point.z
@@ -612,8 +617,6 @@ class CommandPathDressupRampEntry:
         FreeCADGui.doCommand('PathScripts.PathDressupRampEntry.ViewProviderDressup(obj.ViewObject)')
         FreeCADGui.doCommand('PathScripts.PathUtils.addToJob(obj)')
         FreeCADGui.doCommand('Gui.ActiveDocument.getObject(obj.Base.Name).Visibility = False')
-        FreeCADGui.doCommand('obj.ToolController = PathScripts.PathUtils.findToolController(obj)')
-        FreeCADGui.doCommand('dbo.setup(obj)')
         FreeCAD.ActiveDocument.commitTransaction()
         FreeCAD.ActiveDocument.recompute()
 
