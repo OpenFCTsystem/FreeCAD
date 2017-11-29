@@ -100,6 +100,10 @@ class ObjectDressup:
         self.angle = obj.Angle
         self.method = obj.Method
         self.wire, self.rapids = PathGeom.wireForPath(obj.Base.Path)
+
+        # each element in self.outedges is a list of two elements:
+        # the edge itself and boolean information if the edge is part of a ramp
+
         if self.method == 'RampMethod1' or self.method == 'RampMethod2' or self.method == 'RampMethod3':
             self.outedges = self.generateRamps()
         else:
@@ -109,6 +113,7 @@ class ObjectDressup:
     def generateRamps(self, allowBounce=True):
         edges = self.wire.Edges
         outedges = []
+
         for edge in edges:
             israpid = False
             for redge in self.rapids:
@@ -149,7 +154,7 @@ class ObjectDressup:
                             break
                     if len(rampedges) == 0:
                         PathLog.debug("No suitable edges for ramping, plunge will remain as such")
-                        outedges.append(edge)
+                        outedges.append([edge, False])
                     else:
                         if not covered:
                             if (not allowBounce) or self.method == 'RampMethod2':
@@ -177,9 +182,9 @@ class ObjectDressup:
                             else:
                                 outedges.extend(self.createRampMethod3(rampedges, p0, projectionlen, rampangle))
                 else:
-                    outedges.append(edge)
+                    outedges.append([edge, False])
             else:
-                outedges.append(edge)
+                outedges.append([edge, False])
         return outedges
 
     def generateHelix(self):
@@ -223,7 +228,7 @@ class ObjectDressup:
                             break
                     if len(rampedges) == 0 or not loopFound:
                         PathLog.debug("No suitable helix found")
-                        outedges.append(edge)
+                        outedges.append([edge, False])
                     else:
                         outedges.extend(self.createHelix(rampedges, p0, p1))
                         if not PathGeom.isRoughly(p1.z, minZ):
@@ -232,9 +237,9 @@ class ObjectDressup:
                             i = j
 
                 else:
-                    outedges.append(edge)
+                    outedges.append([edge, False])
             else:
-                outedges.append(edge)
+                outedges.append([edge, False])
             i = i + 1
         return outedges
 
@@ -261,11 +266,11 @@ class ObjectDressup:
     def createRampEdge(self, originalEdge, startPoint, endPoint):
         # PathLog.debug("Create edge from [{},{},{}] to [{},{},{}]".format(startPoint.x,startPoint.y, startPoint.z, endPoint.x, endPoint.y, endPoint.z))
         if type(originalEdge.Curve) == Part.Line or type(originalEdge.Curve) == Part.LineSegment:
-            return Part.makeLine(startPoint, endPoint)
+            return [Part.makeLine(startPoint, endPoint), True]
         elif type(originalEdge.Curve) == Part.Circle:
             arcMid = originalEdge.valueAt((originalEdge.FirstParameter + originalEdge.LastParameter) / 2)
             arcMid.z = (startPoint.z + endPoint.z) / 2
-            return Part.Arc(startPoint, arcMid, endPoint).toShape()
+            return [Part.Arc(startPoint, arcMid, endPoint).toShape(), True]
         else:
             PathLog.error("Edge should not be helix")
 
@@ -363,8 +368,11 @@ class ObjectDressup:
             # which were not covered in ramp
             returnedges = rampedges[(i + 1):]
 
+        redges = []
+        for redge in returnedges:
+            redges.append([redge, False])
         # add the return edges:
-        outedges.extend(returnedges)
+        outedges.extend(redges)
 
         return outedges
 
@@ -504,16 +512,19 @@ class ObjectDressup:
 
     def createCommands(self, obj, edges):
         commands = []
-        for edge in edges:
+        for edge, isramp in edges:
             israpid = False
             for redge in self.rapids:
                 if PathGeom.edgesMatch(edge, redge):
                     israpid = True
             if israpid:
                 v = edge.valueAt(edge.LastParameter)
-                commands.append(Path.Command('G0', {'X': v.x, 'Y': v.y, 'Z': v.z}))
+                commands.append([Path.Command('G0', {'X': v.x, 'Y': v.y, 'Z': v.z}), False])
+
             else:
-                commands.extend(PathGeom.cmdsForEdge(edge))
+                cmds = PathGeom.cmdsForEdge(edge)
+                for cmd in cmds:
+                    commands.append([cmd, isramp])
 
         lastCmd = Path.Command('G0', {'X': 0.0, 'Y': 0.0, 'Z': 0.0})
 
@@ -530,8 +541,7 @@ class ObjectDressup:
         horizRapid = obj.ToolController.HorizRapid.Value
         vertRapid = obj.ToolController.VertRapid.Value
 
-
-        for cmd in commands:
+        for cmd, isramp in commands:
             params = cmd.Parameters
             zVal = params.get('Z', None)
             zVal2 = lastCmd.Parameters.get('Z', None)
@@ -552,7 +562,11 @@ class ObjectDressup:
                         params['F'] = vertFeed
                     else:
                         # this is a ramp
-                        params['F'] = rampFeed
+                        if isramp:
+                            params['F'] = rampFeed
+                        else:
+                            params['F'] = vertFeed
+
                 else:
                     params['F'] = horizFeed
                 lastCmd = cmd
