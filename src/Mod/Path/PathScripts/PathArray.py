@@ -26,8 +26,12 @@ import FreeCAD
 import FreeCADGui
 import Path
 import PathScripts
+import PathScripts.PathDressup as PathDressup
 from PySide import QtCore
 import math
+import PathScripts.PathLog as PathLog
+
+PathLog.setLevel(PathLog.Level.INFO, PathLog.thisModule())
 
 """Path Array object and FreeCAD command"""
 
@@ -160,14 +164,20 @@ class ObjectArray:
     def execute(self, obj):
         if obj.Base:
             if not obj.Base.isDerivedFrom("Path::Feature"):
+                PathLog.debug("Obj.Base not Path object")
                 return
             if not obj.Base.Path:
+                PathLog.debug("Obj.Base.Path does not exist")
                 return
-            if not obj.Base.ToolController:
-                return
-
-            obj.ToolController = obj.Base.ToolController
-
+            if hasattr(obj.Base, "ToolController"):
+                obj.ToolController = obj.Base.ToolController
+            else:
+                try:
+                    obj.ToolController = PathDressup.toolController(obj.Base)
+                except:
+                    PathLog.debug("No toolcontoller found")
+                    obj.ToolController = None
+                    return
             # build copies
             basepath = obj.Base.Path
             output = ""
@@ -245,7 +255,7 @@ class CommandPathArray:
             return False
         try:
             obj = FreeCADGui.Selection.getSelectionEx()[0].Object
-            return isinstance(obj.Proxy, PathScripts.PathOp.ObjectOp)
+            return isinstance(obj.Proxy, PathScripts.PathOp.ObjectOp) or (obj.isDerivedFrom("Path::Feature") and "Dressup" in obj.Name)
         except:
             return False
 
