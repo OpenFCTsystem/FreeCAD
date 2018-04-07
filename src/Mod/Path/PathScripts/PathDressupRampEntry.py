@@ -88,7 +88,10 @@ class ObjectDressup:
             obj.Angle = 89.9
         elif obj.Angle <= 0:
             obj.Angle = 0.1
-        self.angle = obj.Angle
+        # The algorithms below ask for an angle relative to the tool, i.e 0deg means a straight down ramp,
+        # but it was concluded that the standard way of setting the angle is relative to the XY plane, i.e 90deg means
+        # straight down ramp.
+        self.angle = 90 - obj.Angle.Value
         self.method = obj.Method
         self.wire, self.rapids = PathGeom.wireForPath(obj.Base.Path)
         if self.method == 'RampMethod1' or self.method == 'RampMethod2' or self.method == 'RampMethod3':
